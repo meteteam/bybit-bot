@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 # Logging ayarları
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(name)
+logger = logging.getLogger(__name__)
 
 # Ortam değişkenlerini yükle
 load_dotenv()
