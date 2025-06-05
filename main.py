@@ -1,96 +1,97 @@
 # main.py
-from fastapi import FastAPI
-from pydantic import BaseModel
-import os
-from pybit.unified_trading import HTTP
 
+import os
+from fastapi import FastAPI, Request
+from pybit.unified_trading import HTTP
+from dotenv import load_dotenv
+import logging
+
+# Ortam değişkenlerini yükle (.env dosyasından)
+load_dotenv()
+
+# Logging yapılandırması
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(name)
+
+# FastAPI uygulaması başlatılıyor
 app = FastAPI()
 
-# API anahtarlarını environment değişkenlerinden al
+# Bybit API kimlik bilgileri
 api_key = os.getenv("BYBIT_API_KEY")
 api_secret = os.getenv("BYBIT_API_SECRET")
 
-# Bybit HTTP oturumu
+# Bybit Unified Trading API oturumu oluştur
 session = HTTP(
     api_key=api_key,
     api_secret=api_secret,
+    testnet=False
 )
 
-# Webhook'tan gelen veriyi temsil eden model
-class Signal(BaseModel):
-    action: str
-    symbol: str
 
-# Cüzdanın %50'si kadar pozisyon açmak için miktarı hesaplayan yardımcı fonksiyon
 def get_half_balance(symbol: str) -> float:
-    # 1. USDT cüzdan bakiyesini al
-    wallet = session.get_wallet_balance(accountType="UNIFIED")["result"]["list"]
-    usdt_balance = 0.0
-    for asset in wallet[0]["coin"]:
-        if asset["coin"] == "USDT":
-            usdt_balance = float(asset["availableToTrade"])
-            break
-
-    # 2. ETHUSDT fiyatını al
-    ticker = session.get_mark_price(category="linear", symbol=symbol)
-    mark_price = float(ticker["result"]["markPrice"])
-
-    # 3. %50 bakiye ile miktarı hesapla
-    amount_usdt = usdt_balance * 0.5
-    qty = round(amount_usdt / mark_price, 4)  # 4 ondalık hassasiyet genellikle yeterlidir
-    return qty
-
-@app.post("/webhook")
-async def webhook(signal: Signal):
-    data = signal.dict()
-    action = data.get("action")
-    symbol = data.get("symbol")
-
-    if not action or not symbol:
-        return {"status": "error", "msg": "Eksik veri"}
-
-    print(f"Gelen sinyal: {action} - {symbol}")
-
+    """
+    Kullanıcının cüzdanındaki coin bakiyesinin %50'sini döner.
+    USDT pariteleri için çalışır.
+    """
     try:
-        qty = get_half_balance(symbol)
+        coin_symbol = symbol.replace("USDT", "")
+        balance_data = session.get_wallet_balance(accountType="UNIFIED")
+        coin_list = balance_data["result"]["list"][0]["coin"]
 
-        if action == "BUY_PARTIAL":
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Buy",
-                order_type="Market",
-                qty=qty
-            )
-        elif action == "SELL_PARTIAL":
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Sell",
-                order_type="Market",
-                qty=qty
-            )
-        elif action == "CLOSE_SHORT":
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Buy",
-                order_type="Market",
-                qty=qty
-            )
-        elif action == "SHORT_AGAIN":
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Sell",
-                order_type="Market",
-                qty=qty
-            )
-        else:
-            return {"status": "error", "msg": "Bilinmeyen aksiyon"}
+        coin_info = next((item for item in coin_list if item["coin"] == coin_symbol), None)
+        if not coin_info:
+            logger.warning(f"{coin_symbol} bakiyesi bulunamadı.")
+            return 0.0
 
-        return {"status": "ok", "qty": qty}
+        available = float(coin_info.get("availableToTrade") or coin_info.get("availableBalance") or 0)
+        qty = available * 0.5
+        logger.info(f"Anlık bakiye: {available} {coin_symbol}, İşlem miktarı (50%): {qty}")
+        return round(qty, 6)
 
     except Exception as e:
-        print("Hata:", str(e))
-        return {"status": "error", "msg": str(e)}
+        logger.error(f"Bakiye alma hatası: {e}")
+        return 0.0
+
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    """
+    TradingView'den gelen POST webhook'u karşılar ve işlemi başlatır.
+    """
+    try:
+        data = await request.json()
+        action = data.get("action")
+        symbol = data.get("symbol", "ETHUSDT")
+
+        logger.info(f"Gelen sinyal: {action} - {symbol}")
+
+        qty = get_half_balance(symbol)
+        if qty == 0:
+            logger.warning("İşlem yapılacak bakiye bulunamadı.")
+            return {"status": "Bakiye yetersiz"}
+
+        if action == "BUY_PARTIAL":
+            session.place_order(category="linear", symbol=symbol, side="Buy", order_type="Market", qty=qty)
+            logger.info("Buy emri gönderildi.")
+
+        elif action == "SELL_PARTIAL":
+            session.place_order(category="linear", symbol=symbol, side="Sell", order_type="Market", qty=qty)
+            logger.info("Sell emri gönderildi.")
+
+        elif action == "CLOSE_SHORT":
+            session.place_order(category="linear", symbol=symbol, side="Buy", order_type="Market", qty=qty)
+            logger.info("Short pozisyon kapatıldı.")
+
+        elif action == "SHORT_AGAIN":
+            session.place_order(category="linear", symbol=symbol, side="Sell", order_type="Market", qty=qty)
+            logger.info("Short yeniden açıldı.")
+
+        else:
+            logger.warning("Bilinmeyen işlem türü.")
+            return {"status": "Hatalı sinyal", "action": action}
+
+        return {"status": "İşlem başarılı", "action": action, "qty": qty}
+
+    except Exception as e:
+        logger.error(f"Webhook işlem hatası: {e}")
+        return {"status": "Hata", "error": str(e)}
