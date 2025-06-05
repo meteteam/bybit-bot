@@ -1,11 +1,12 @@
 # main.py
-import os
+
 import logging
+import os
 from fastapi import FastAPI, Request
 from pybit.unified_trading import HTTP
 from dotenv import load_dotenv
 
-# Logger ayarları
+# Logger yapılandırması
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -14,99 +15,98 @@ load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
+BASE_URL = os.getenv("BASE_URL", "https://api.bybit.com")
 
-# API anahtarları kontrolü
 if not API_KEY or not API_SECRET:
     logger.error("API_KEY veya API_SECRET eksik.")
     raise ValueError("API_KEY veya API_SECRET tanımlı değil.")
 
-# Bybit HTTP session (Unified Account)
+# Bybit HTTP (Unified Trading API V5) oturumu
 session = HTTP(
-    testnet=False,
     api_key=API_KEY,
-    api_secret=API_SECRET
+    api_secret=API_SECRET,
+    endpoint=BASE_URL,
 )
 
-# FastAPI başlat
+# FastAPI uygulaması
 app = FastAPI()
 
-def get_usdt_balance():
+
+def get_usdt_balance() -> float:
     """
-    Kullanıcının USDT bakiyesini getirir (Unified Account içinde kullanılabilir bakiye).
+    Kullanıcının UNIFIED hesabındaki USDT bakiyesini döner.
     """
     try:
-        result = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
-        balance = float(result["result"]["list"][0]["coin"][0]["availableToTrade"])
-        logger.info(f"USDT Available: {balance}")
-        return balance
+        response = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
+        usdt_balance = float(response["result"]["list"][0]["coin"][0]["availableToTrade"])
+        logger.info(f"USDT bakiyesi: {usdt_balance}")
+        return usdt_balance
     except Exception as e:
         logger.error(f"USDT bakiyesi alınamadı: {e}")
-        return 0
+        return 0.0
 
-def get_eth_price():
+
+def get_eth_price() -> float:
     """
-    ETH/USDT son fiyatını getirir.
+    ETHUSDT için güncel fiyatı getirir (orderbook üzerinden).
     """
     try:
-        result = session.get_ticker(category="linear", symbol="ETHUSDT")
-        return float(result["result"]["list"][0]["lastPrice"])
+        orderbook = session.get_orderbook(category="linear", symbol="ETHUSDT")
+        price = float(orderbook["result"]["a"][0][0])  # En iyi ask fiyatı
+        logger.info(f"ETH fiyatı: {price}")
+        return price
     except Exception as e:
         logger.error(f"ETH fiyatı alınamadı: {e}")
-        return 0
+        return 0.0
 
-def place_order(symbol: str, side: str, qty: float):
+
+def place_market_order(side: str, qty: float):
     """
-    Market emri ile işlem açar.
+    Belirtilen miktarda piyasa emri gönderir.
     """
     try:
         order = session.place_order(
             category="linear",
-            symbol=symbol,
+            symbol="ETHUSDT",
             side=side,
             order_type="Market",
             qty=qty,
             time_in_force="GoodTillCancel",
-            reduce_only=False  # Eğer pozisyon kapatılacaksa değiştirebiliriz
         )
-        logger.info(f"Emir gönderildi: {order}")
+        logger.info(f"{side} emri gönderildi: {order}")
         return order
     except Exception as e:
-        logger.error(f"Emir gönderme hatası: {e}")
+        logger.error(f"{side} emri gönderilemedi: {e}")
         return {"error": str(e)}
+
 
 @app.post("/webhook")
 async def webhook(request: Request):
     """
-    TradingView'den gelen sinyali işler.
-    Mesaj içinde "BUY", "SELL", "SHORT_AGAIN", "CLOSE_SHORT" komutlarını destekler.
+    TradingView veya benzeri sistemlerden gelen webhook çağrısını işler.
     """
     data = await request.json()
-    message = data.get("action", "").upper().strip()
+    action = data.get("action", "").upper()
+    logger.info(f"Gelen sinyal: {action}")
 
-    logger.info(f"Gelen sinyal: {message}")
-
-    symbol = "ETHUSDT"
-    usdt_balance = get_usdt_balance()
+    # Mevcut bakiye ve fiyat
+    balance = get_usdt_balance()
     eth_price = get_eth_price()
 
-    if usdt_balance <= 0 or eth_price <= 0:
-        return {"error": "Bakiye veya fiyat alınamadı."}
+    if balance <= 0 or eth_price <= 0:
+        return {"error": "Yetersiz bakiye veya fiyat alınamadı."}
 
-    # USDT bakiyesinin %50'si kadar ETH hesapla
-    eth_qty = round((usdt_balance * 0.5) / eth_price, 4)  # 4 ondalık hassasiyet
+    # %50'lik pozisyon büyüklüğü
+    usdt_to_use = balance * 0.5
+    qty = round(usdt_to_use / eth_price, 4)  # 4 ondalıklı hassasiyet
 
-    if message == "BUY":
-        return place_order(symbol, "Buy", eth_qty)
+    if qty <= 0:
+        return {"error": "Hesaplanan miktar geçersiz."}
 
-    elif message == "SELL":
-        return place_order(symbol, "Sell", eth_qty)
-
-    elif message == "SHORT_AGAIN":
-        return place_order(symbol, "Sell", eth_qty)
-
-    elif message == "CLOSE_SHORT":
-        return place_order(symbol, "Buy", eth_qty)
-
+    # İşlem yönü
+    if action in ["BUY", "LONG", "BUY_PARTIAL"]:
+        return place_market_order("Buy", qty)
+    elif action in ["SELL", "SHORT", "SELL_PARTIAL"]:
+        return place_market_order("Sell", qty)
     else:
-        logger.warning(f"Tanımsız sinyal: {message}")
-        return {"error": "Geçersiz sinyal"}
+        return {"error": f"Geçersiz sinyal: {action}"}
