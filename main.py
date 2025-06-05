@@ -1,100 +1,86 @@
 # main.py
-
-import os
 import logging
+import os
 from fastapi import FastAPI, Request
 from pybit.unified_trading import HTTP
+from dotenv import load_dotenv
 
-# Logger yapılandırması
+# Logger ayarları
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(name)
 
-# Environment değişkenlerini al
-API_KEY = os.getenv("API_KEY", "").strip()
-API_SECRET = os.getenv("API_SECRET", "").strip()
+# .env dosyasını yükle
+load_dotenv()
 
-# Doğrulama
+API_KEY = os.getenv("API_KEY")
+API_SECRET = os.getenv("API_SECRET")
+
 if not API_KEY or not API_SECRET:
     logger.error("API_KEY veya API_SECRET eksik.")
     raise ValueError("API_KEY veya API_SECRET tanımlı değil.")
 
-# Bybit bağlantısı (Unified Trading için)
+# Bybit HTTP oturumu (Unified Trading API v3)
 session = HTTP(
+    testnet=False,
     api_key=API_KEY,
     api_secret=API_SECRET,
 )
 
-# FastAPI başlat
+# FastAPI uygulaması
 app = FastAPI()
 
-# Belirli bir sembol için bakiyenin %50'sini al
-def get_half_balance(symbol: str) -> float:
+
+def get_eth_balance():
+    """ETH bakiyesini getirir"""
     try:
-        asset = symbol.replace("USDT", "")
-        balances = session.get_wallet_balance(accountType="UNIFIED")
-        total_equity = float(balances["result"]["list"][0]["totalEquity"])
-        mark_price = float(session.get_ticker(category="linear", symbol=symbol)["result"]["list"][0]["lastPrice"])
-        qty = (total_equity / mark_price) * 0.5
-        return round(qty, 4)
+        balance_data = session.get_wallet_balance(accountType="UNIFIED", coin="ETH")
+        eth_balance = float(balance_data["result"]["list"][0]["coin"][0]["availableToTrade"])
+        logger.info(f"ETH bakiyesi: {eth_balance}")
+        return eth_balance
     except Exception as e:
-        logger.error(f"Bakiye hesaplanırken hata: {e}")
-        return 0.0
+        logger.error(f"ETH bakiyesi alınamadı: {e}")
+        return 0
+
+
+def place_order(symbol: str, side: str, qty: float):
+    """Piyasa emri ile işlem açar"""
+    try:
+        result = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=side,
+            order_type="Market",
+            qty=qty,
+            time_in_force="GoodTillCancel",
+        )
+        logger.info(f"Emir gönderildi: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Emir gönderme hatası: {e}")
+        return None
+
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    try:
-        data = await request.json()
-        signal = data.get("action", "").upper()
-        symbol = data.get("symbol", "ETHUSDT")
+    data = await request.json()
+    message = data.get("action") or ""
 
-        logger.info(f"Gelen sinyal: {signal} - {symbol}")
+    logger.info(f"Gelen sinyal: {message}")
 
-        qty = get_half_balance(symbol)
-        if qty == 0.0:
-            return {"status": "failed", "reason": "Bakiye alınamadı veya işlem yapılamaz."}
+    symbol = "ETHUSDT"
+    qty = round(get_eth_balance() * 0.5, 4)  # %50'lik pozisyon, 4 ondalık hassasiyet
 
-        if signal == "BUY_PARTIAL":
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Buy",
-                orderType="Market",
-                qty=qty
-            )
+    if qty <= 0:
+        return {"error": "Yetersiz bakiye"}
 
-        elif signal == "SELL_PARTIAL":
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Sell",
-                orderType="Market",
-                qty=qty
-            )
-
-        elif signal == "SHORT_AGAIN":
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Sell",
-                orderType="Market",
-                qty=qty
-            )
-
-        elif signal == "CLOSE_SHORT":
-            session.place_order(
-                category="linear",
-                symbol=symbol,
-                side="Buy",
-                orderType="Market",
-                qty=qty
-            )
-
-        else:
-            logger.warning(f"Bilinmeyen sinyal: {signal}")
-            return {"status": "ignored", "message": "Bilinmeyen sinyal."}
-
-        return {"status": "success", "signal": signal, "qty": qty}
-
-    except Exception as e:
-        logger.error(f"Webhook işlemi sırasında hata: {e}")
-        return {"status": "error", "detail": str(e)}
+    if message == "BUY":
+        return place_order(symbol, "Buy", qty)
+    elif message == "SELL":
+        return place_order(symbol, "Sell", qty)
+    elif message == "SHORT_AGAIN":
+        return place_order(symbol, "Sell", qty)
+    elif message == "CLOSE_SHORT":
+        return place_order(symbol, "Buy", qty)
+    else:
+        logger.warning(f"Bilinmeyen sinyal: {message}")
+        return {"error": "Geçersiz sinyal"}
