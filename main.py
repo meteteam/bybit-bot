@@ -11,51 +11,53 @@ from dotenv import load_dotenv
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bybit-bot")
 
-# .env dosyasını yükle
+# Ortam değişkenlerini yükle
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
 
 if not API_KEY or not API_SECRET:
-    logger.error("API_KEY veya API_SECRET eksik.")
-    raise ValueError("API_KEY veya API_SECRET tanımlı değil.")
+    logger.error("API_KEY veya API_SECRET tanımlı değil.")
+    raise ValueError("API_KEY veya API_SECRET eksik.")
 
-# Bybit unified account için oturum oluştur
+# Bybit unified session
 session = HTTP(api_key=API_KEY, api_secret=API_SECRET)
 
-# FastAPI örneği başlat
+# FastAPI instance
 app = FastAPI()
 
 
-# Webhook isteği modeli
+# Webhook isteği için model
 class WebhookRequest(BaseModel):
     action: str
     symbol: str
 
 
-# USDT bakiyesini al
+# Cüzdan bakiyesi çek
 def get_usdt_balance() -> float:
     try:
-        resp = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
-        logger.info(f"Cüzdan yanıtı: {resp}")
-        return float(resp["result"]["list"][0]["coin"][0]["walletBalance"])
+        response = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
+        logger.info(f"Cüzdan bakiyesi (raw): {response}")
+        balance = float(response["result"]["list"][0]["coin"][0]["walletBalance"])
+        logger.info(f"USDT bakiyesi: {balance}")
+        return balance
     except Exception as e:
-        logger.error(f"USDT bakiyesi alınamadı: {e}")
+        logger.error(f"Bakiye alınamadı: {e}")
         return 0.0
 
 
-# Fiyat bilgisi al
+# Fiyat çek
 def get_price(symbol: str) -> float:
     try:
-        data = session.get_ticker(category="linear", symbol=symbol)
-        logger.info(f"{symbol} fiyat verisi: {data}")
-        return float(data["result"]["list"][0]["lastPrice"])
+        ticker = session.get_ticker(category="linear", symbol=symbol)
+        logger.info(f"{symbol} fiyat bilgisi: {ticker}")
+        return float(ticker["result"]["list"][0]["lastPrice"])
     except Exception as e:
         logger.error(f"{symbol} fiyatı alınamadı: {e}")
         return 0.0
 
 
-# Action'a göre işlem yönü belirle
+# İşlem yönünü belirle
 def determine_side(action: str) -> str:
     buy_signals = ["FULL_LONG", "50_RE_LONG", "FULL_SHORT_CLOSE", "50_SHORT_CLOSE"]
     sell_signals = ["FULL_SHORT", "50_RE_SHORT", "FULL_LONG_CLOSE", "50_LONG_CLOSE"]
@@ -64,7 +66,8 @@ def determine_side(action: str) -> str:
         return "Buy"
     elif action in sell_signals:
         return "Sell"
-    return ""
+    else:
+        return ""
 
 
 # Webhook endpoint
@@ -89,10 +92,8 @@ async def webhook_handler(payload: WebhookRequest):
         return {"error": "Fiyat alınamadı"}
 
     qty = round(balance / price, 3)
-
-    # ETH için minimum 0.01 kontrolü
-    if symbol.endswith("ETHUSDT") and qty < 0.01:
-        return {"error": f"ETH için min işlem miktarı 0.01, hesaplanan: {qty}"}
+    if qty < 0.01:
+        return {"error": f"Min. işlem miktarının altında: {qty}"}
 
     try:
         order = session.place_order(
