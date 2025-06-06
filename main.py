@@ -68,7 +68,7 @@ def get_position_qty(symbol: str) -> float:
 async def webhook(signal: WebhookSignal):
     action = signal.action.upper()
     symbol = signal.symbol.upper()
-   logger.info(f"[Webhook] Sinyal alındı: {action}, Symbol: {symbol}")
+logger.info(f"[Webhook] Sinyal alındı: {action}, Symbol: {symbol}")
     logger.info(f"Gelen sinyal: {action}")
 
     # Fiyat al
