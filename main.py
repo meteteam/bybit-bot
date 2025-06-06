@@ -28,7 +28,7 @@ app = FastAPI()
 
 # Request veri modeli
 class WebhookRequest(BaseModel):
-    action: str  # Ör: FULL_BUY
+    action: str  # Ör: FULL_LONG
     symbol: str  # Ör: ETHUSDT
 
 
@@ -66,7 +66,10 @@ async def webhook_webhook(payload: WebhookRequest):
 
     logger.info(f"Gelen sinyal: {action}")
 
-    if action == "FULL_LONG":
+    if {
+  "action": "FULL_LONG",
+  "symbol": "ETHUSDT"
+}
         usdt_balance = get_usdt_balance()
         if usdt_balance <= 1:
             return {"error": "Yetersiz bakiye."}
