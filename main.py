@@ -12,7 +12,7 @@ load_dotenv()
 
 # Logging yapılandırması
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("main")
 
 # Bybit API anahtarları
 API_KEY = os.getenv("API_KEY")
