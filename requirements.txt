@@ -1,4 +1,4 @@
 fastapi
 uvicorn
 python-dotenv
-pybit
+pybit==5.11.0
