@@ -43,12 +43,12 @@ def get_usdt_balance():
         coins = balance_data["result"]["list"][0]["coin"]
         usdt_coin = next((item for item in coins if item["coin"] == "USDT"), None)
 
-        if usdt_coin and "availableToTrade" in usdt_coin:
-            balance = float(usdt_coin["availableToTrade"])
+        if usdt_coin:
+            balance = float(usdt_coin.get("availableToTrade") or usdt_coin.get("availableToBalance") or 0.0)
             logger.info(f"USDT bakiyesi: {balance}")
             return balance
         else:
-            logger.error("USDT bilgisi bulunamadı veya availableToTrade eksik.")
+            logger.error("USDT bilgisi bulunamadı.")
             return 0.0
     except Exception as e:
         logger.error(f"USDT bakiyesi alınamadı: {e}")
