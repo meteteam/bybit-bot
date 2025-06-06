@@ -1,5 +1,4 @@
 # main.py
-
 import os
 import logging
 from fastapi import FastAPI, Request
@@ -7,37 +6,57 @@ from pydantic import BaseModel
 from pybit.unified_trading import HTTP
 from dotenv import load_dotenv
 
-# Logging ayarları
+# === LOGGING ===
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("main")
 
-# .env dosyasını yükle
+# === ENV VARS ===
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
 
 if not API_KEY or not API_SECRET:
     logger.error("API_KEY veya API_SECRET tanımlı değil.")
-    raise ValueError("API_KEY veya API_SECRET eksik.")
+    raise ValueError("API anahtarları eksik!")
 
-# Bybit oturumu
-session = HTTP(
-    api_key=API_KEY,
-    api_secret=API_SECRET
-)
+# === BYBIT SESSION ===
+session = HTTP(api_key=API_KEY, api_secret=API_SECRET)
 
-# FastAPI uygulaması
+# === FastAPI APP ===
 app = FastAPI()
 
-# Webhook request modeli
+# === Request Veri Modeli ===
 class WebhookRequest(BaseModel):
     action: str
-    symbol: str
 
-# USDT bakiyesi okuma
 
-# ETH fiyatı alma
-def get_ethusdt_price():
+# === USDT Bakiyesi Alma Fonksiyonu ===
+def get_usdt_balance() -> float:
+    try:
+        balance_data = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
+        logger.info(f"Wallet balance raw response: {balance_data}")
+
+        coin_list = balance_data["result"]["list"]
+        if not coin_list:
+            raise ValueError("Boş coin listesi döndü.")
+
+        coin_info_list = coin_list[0]["coin"]
+        usdt_info = next((c for c in coin_info_list if c["coin"] == "USDT"), None)
+
+        if not usdt_info:
+            raise ValueError("USDT bilgisi bulunamadı")
+
+        balance = float(usdt_info.get("availableToTrade", 0))
+        logger.info(f"USDT bakiyesi: {balance}")
+        return balance
+
+    except Exception as e:
+        logger.error(f"USDT bakiyesi alınamadı: {e}")
+        return 0.0
+
+
+# === ETHUSDT Fiyatını Getir ===
+def get_ethusdt_price() -> float:
     try:
         ticker_data = session.get_tickers(category="linear", symbol="ETHUSDT")
         logger.info(f"Ticker response: {ticker_data}")
@@ -47,24 +66,9 @@ def get_ethusdt_price():
     except Exception as e:
         logger.error(f"ETH fiyatı alınamadı: {e}")
         return 0.0
-def get_usdt_balance():
-    try:
-        balance_data = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
-        logger.info(f"Wallet balance raw response: {balance_data}")
 
-        coins = balance_data["result"]["list"][0]["coin"]
-        usdt_info = next((c for c in coins if c["coin"] == "USDT"), None)
 
-        if usdt_info is None:
-            raise ValueError("USDT bilgisi bulunamadı")
-
-        balance = float(usdt_info["availableToTrade"])
-        logger.info(f"USDT bakiyesi: {balance}")
-        return balance
-    except Exception as e:
-        logger.error(f"USDT bakiyesi alınamadı: {e}")
-        return 0.0
-# Emir gönderme
+# === Emir Gönderme Fonksiyonu ===
 def place_order(symbol: str, side: str, qty: float):
     try:
         response = session.place_order(
@@ -75,17 +79,17 @@ def place_order(symbol: str, side: str, qty: float):
             qty=qty,
             time_in_force="GoodTillCancel"
         )
-        logger.info(f"Emir gönderildi: {response}")
+        logger.info(f"Emir başarıyla gönderildi: {response}")
         return response
     except Exception as e:
         logger.error(f"Emir gönderilemedi: {e}")
         return {"error": str(e)}
 
-# Webhook endpoint
+
+# === Webhook Endpoint ===
 @app.post("/webhook")
 async def webhook(payload: WebhookRequest):
     action = payload.action.upper()
-    symbol = payload.symbol.upper()
     logger.info(f"Gelen sinyal: {action}")
 
     usdt_balance = get_usdt_balance()
@@ -100,17 +104,16 @@ async def webhook(payload: WebhookRequest):
     if qty <= 0:
         return {"error": "Yetersiz bakiye veya fiyat hatası."}
 
-    if action in ["FULL_LONG", "50_RE_LONG"]:
+    symbol = "ETHUSDT"
+
+    if action in ["FULL_LONG", "BUY"]:
         return place_order(symbol, "Buy", qty)
-    elif action in ["FULL_SHORT", "50_RE_SHORT"]:
+    elif action in ["FULL_SHORT", "SELL"]:
         return place_order(symbol, "Sell", qty)
-    elif action == "50_LONG_CLOSE":
+    elif action == "FULL_LONG_CLOSE":
         return place_order(symbol, "Sell", qty)
-    elif action == "50_SHORT_CLOSE":
+    elif action == "FULL_SHORT_CLOSE":
         return place_order(symbol, "Buy", qty)
-    elif action in ["FULL_LONG_CLOSE", "FULL_SHORT_CLOSE"]:
-        logger.info("Pozisyon kapatma sinyali geldi, manuel kapama gerekebilir.")
-        return {"info": "Kapatma sinyali geldi, borsada pozisyonu manuel kapat."}
     else:
         logger.warning(f"Bilinmeyen sinyal: {action}")
-        return {"error": "Geçersiz sinyal"}
+        return {"error": "Geçersiz sinyal."}
