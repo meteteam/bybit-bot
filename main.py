@@ -46,11 +46,11 @@ def get_usdt_balance() -> float:
         wallets = session.get_wallet_balance(accountType="UNIFIED")
         for coin in wallets["result"]["list"][0]["coin"]:
             if coin["coin"] == "USDT":
-                return float(coin["availableToWithdraw"])
+                value = coin.get("availableToWithdraw", "0")
+                return float(value) if value not in ["", None] else 0.0
     except Exception as e:
         logger.error(f"Bakiye alınamadı: {e}")
     return 0.0
-
 # Pozisyon miktarını çek
 def get_position_qty(symbol: str) -> float:
     try:
