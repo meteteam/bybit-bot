@@ -35,21 +35,7 @@ class WebhookRequest(BaseModel):
     symbol: str
 
 # USDT bakiyesi okuma
-def get_usdt_balance():
-    try:
-        balance_data = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
-        logger.info(f"Wallet balance raw response: {balance_data}")
 
-        # Yeni parse yöntemi (dict tabanlı coin objesi için)
-        balance = float(
-            balance_data["result"]["list"][0]["coin"]["USDT"]["availableToTrade"]
-        )
-
-        logger.info(f"USDT bakiyesi: {balance}")
-        return balance
-    except Exception as e:
-        logger.error(f"USDT bakiyesi alınamadı: {e}")
-        return 0.0
 # ETH fiyatı alma
 def get_ethusdt_price():
     try:
@@ -61,7 +47,23 @@ def get_ethusdt_price():
     except Exception as e:
         logger.error(f"ETH fiyatı alınamadı: {e}")
         return 0.0
+def get_usdt_balance():
+    try:
+        balance_data = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
+        logger.info(f"Wallet balance raw response: {balance_data}")
 
+        coins = balance_data["result"]["list"][0]["coin"]
+        usdt_info = next((c for c in coins if c["coin"] == "USDT"), None)
+
+        if usdt_info is None:
+            raise ValueError("USDT bilgisi bulunamadı")
+
+        balance = float(usdt_info["availableToTrade"])
+        logger.info(f"USDT bakiyesi: {balance}")
+        return balance
+    except Exception as e:
+        logger.error(f"USDT bakiyesi alınamadı: {e}")
+        return 0.0
 # Emir gönderme
 def place_order(symbol: str, side: str, qty: float):
     try:
