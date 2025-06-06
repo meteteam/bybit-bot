@@ -66,7 +66,7 @@ async def webhook_webhook(payload: WebhookRequest):
 
     logger.info(f"Gelen sinyal: {action}")
 
-    if action == "FULL_BUY":
+    if action == "FULL_LONG":
         usdt_balance = get_usdt_balance()
         if usdt_balance <= 1:
             return {"error": "Yetersiz bakiye."}
