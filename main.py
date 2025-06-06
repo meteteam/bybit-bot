@@ -40,13 +40,14 @@ def get_usdt_balance():
         balance_data = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
         logger.info(f"Wallet balance raw response: {balance_data}")
         
-        coin_data = balance_data["result"]["list"][0]["coin"]
-        usdt_info = next((c for c in coin_data if c["coin"] == "USDT"), None)
-        
-        if usdt_info is None:
+        # Gelen listede 'coin' == 'USDT' olanı filtrele
+        coin_list = balance_data.get("result", {}).get("list", [])[0].get("coin", [])
+        usdt_info = next((c for c in coin_list if c.get("coin") == "USDT"), None)
+
+        if not usdt_info:
             raise ValueError("USDT bilgisi bulunamadı.")
-        
-        balance = float(usdt_info["availableToTrade"])
+
+        balance = float(usdt_info.get("availableToTrade", 0))
         logger.info(f"USDT bakiyesi: {balance}")
         return balance
 
