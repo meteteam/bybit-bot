@@ -43,15 +43,22 @@ def get_usdt_balance():
 
 def get_ethusdt_price():
     try:
-        ticker_data = session.get_instruments_info(category="linear", symbol="ETHUSDT")
+        ticker_data = session.get_ticker(category="linear", symbol="ETHUSDT")
         logger.info(f"ETH ticker raw: {ticker_data}")
-        price = float(ticker_data["result"]["list"][0]["lastPrice"])
+
+        result = ticker_data.get("result")
+        if isinstance(result, dict):
+            price = float(result.get("lastPrice", 0))
+        elif isinstance(result, list) and len(result) > 0:
+            price = float(result[0].get("lastPrice", 0))
+        else:
+            raise ValueError("lastPrice bulunamadı")
+
         logger.info(f"MAIN: ETH fiyatı: {price}")
         return price
     except Exception as e:
         logger.error(f"ETH fiyatı alınamadı: {e}")
         return 0.0
-
 class WebhookRequest(BaseModel):
     action: str
     symbol: str
