@@ -39,21 +39,20 @@ def get_usdt_balance():
     try:
         balance_data = session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
         logger.info(f"Wallet balance raw response: {balance_data}")
+        
+        coin_data = balance_data["result"]["list"][0]["coin"]
+        usdt_info = next((c for c in coin_data if c["coin"] == "USDT"), None)
+        
+        if usdt_info is None:
+            raise ValueError("USDT bilgisi bulunamadı.")
+        
+        balance = float(usdt_info["availableToTrade"])
+        logger.info(f"USDT bakiyesi: {balance}")
+        return balance
 
-        coins = balance_data["result"]["list"][0]["coin"]
-        usdt_coin = next((item for item in coins if item["coin"] == "USDT"), None)
-
-        if usdt_coin:
-            balance = float(usdt_coin.get("availableToTrade") or usdt_coin.get("availableToBalance") or 0.0)
-            logger.info(f"USDT bakiyesi: {balance}")
-            return balance
-        else:
-            logger.error("USDT bilgisi bulunamadı.")
-            return 0.0
     except Exception as e:
         logger.error(f"USDT bakiyesi alınamadı: {e}")
         return 0.0
-
 # ETH fiyatı alma
 def get_ethusdt_price():
     try:
