@@ -2,7 +2,7 @@
 
 import os
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from pybit.unified_trading import HTTP
 from dotenv import load_dotenv
@@ -11,9 +11,8 @@ from dotenv import load_dotenv
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# .env dosyasını yükle
+# .env dosyasından API anahtarlarını yükle
 load_dotenv()
-
 API_KEY = os.getenv("API_KEY")
 API_SECRET = os.getenv("API_SECRET")
 
@@ -21,18 +20,19 @@ if not API_KEY or not API_SECRET:
     logger.error("API_KEY veya API_SECRET tanımlı değil.")
     raise ValueError("API_KEY veya API_SECRET eksik.")
 
-# Bybit V5 HTTP API oturumu
+# Bybit API oturumu (unified hesap)
 session = HTTP(
     api_key=API_KEY,
     api_secret=API_SECRET
 )
 
-# FastAPI başlat
+# FastAPI uygulaması
 app = FastAPI()
 
-# Request veri modeli
+# Webhook'tan gelen veriler için model
 class WebhookRequest(BaseModel):
     action: str
+    symbol: str
 
 # Bakiye çekme
 def get_usdt_balance():
@@ -43,10 +43,10 @@ def get_usdt_balance():
         logger.info(f"USDT bakiyesi: {balance}")
         return balance
     except Exception as e:
-        logger.error(f"Bakiye alınamadı: {e}")
+        logger.error(f"USDT bakiyesi alınamadı: {e}")
         return 0.0
 
-# Fiyat çekme
+# ETH fiyatını çek
 def get_ethusdt_price():
     try:
         ticker_data = session.get_tickers(category="linear", symbol="ETHUSDT")
@@ -55,10 +55,10 @@ def get_ethusdt_price():
         logger.info(f"ETH fiyatı: {price}")
         return price
     except Exception as e:
-        logger.error(f"Fiyat alınamadı: {e}")
+        logger.error(f"ETH fiyatı alınamadı: {e}")
         return 0.0
 
-# Emir gönderme
+# Emir gönder
 def place_order(symbol: str, side: str, qty: float):
     try:
         response = session.place_order(
@@ -79,32 +79,34 @@ def place_order(symbol: str, side: str, qty: float):
 @app.post("/webhook")
 async def webhook(payload: WebhookRequest):
     action = payload.action.upper()
+    symbol = payload.symbol.upper()
     logger.info(f"Gelen sinyal: {action}")
 
     usdt_balance = get_usdt_balance()
     eth_price = get_ethusdt_price()
 
     if usdt_balance == 0 or eth_price == 0:
-        return {"error": "Bakiye veya fiyat alınamadı."}
+        return {"error": "Bakiyeye veya fiyata ulaşılamadı."}
 
-    symbol = "ETHUSDT"
+    # %50'lik pozisyon
     position_usdt = usdt_balance * 0.5
     qty = round(position_usdt / eth_price, 4)
 
     if qty <= 0:
         return {"error": "Yetersiz bakiye veya fiyat hatası."}
 
-    # İşlem eşlemesi
-    if action in ["FULL_LONG", "50_RE_LONG", "BUY", "BUY_PARTIAL"]:
+    # Sinyale göre emir yönü
+    if action in ["FULL_LONG", "50_RE_LONG"]:
         return place_order(symbol, "Buy", qty)
 
-    elif action in ["FULL_SHORT", "50_RE_SHORT", "SELL", "SELL_PARTIAL"]:
+    elif action in ["FULL_SHORT", "50_RE_SHORT"]:
         return place_order(symbol, "Sell", qty)
 
-    elif action in ["FULL_LONG_CLOSE", "50_LONG_CLOSE", "FULL_SHORT_CLOSE", "50_SHORT_CLOSE"]:
-        # İşlem kapatma yapılmayacaksa burada log atılabilir
-        logger.info(f"Sadece işlem kapanış sinyali alındı: {action} — Aktif pozisyon yok.")
-        return {"info": f"Sinyal alındı: {action}, işlem gönderilmedi (sadece kapanış etiketi)."}
+    elif action in ["50_LONG_CLOSE", "FULL_LONG_CLOSE"]:
+        return place_order(symbol, "Sell", qty)
+
+    elif action in ["50_SHORT_CLOSE", "FULL_SHORT_CLOSE"]:
+        return place_order(symbol, "Buy", qty)
 
     else:
         logger.warning(f"Bilinmeyen sinyal: {action}")
