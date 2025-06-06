@@ -44,10 +44,10 @@ def get_price(symbol: str) -> float:
 def get_usdt_balance() -> float:
     try:
         wallets = session.get_wallet_balance(accountType="UNIFIED")
-        logger.info(f"[DEBUG] Wallets response: {wallets}")  # ŞU SATIRI EKLE
+        logger.info(f"[DEBUG] Wallets response: {wallets}")  # debug log kalabilir
         for coin in wallets["result"]["list"][0]["coin"]:
             if coin["coin"] == "USDT":
-                value = coin.get("availableToWithdraw", "0")
+                value = coin.get("availableToWithdraw") or coin.get("walletBalance") or "0"
                 return float(value) if value not in ["", None] else 0.0
     except Exception as e:
         logger.error(f"Bakiye alınamadı: {e}")
