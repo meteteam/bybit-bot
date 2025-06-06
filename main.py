@@ -38,30 +38,31 @@ class WebhookRequest(BaseModel):
 # Yardımcı Fonksiyonlar
 # -------------------------------
 
-def get_usdt_balance() -> float:
-    """
-    USDT cinsinden kullanılabilir bakiyeyi getirir
-    """
+def get_usdt_balance():
     try:
         balance_data = session.get_wallet_balance(accountType="UNIFIED")
         logger.info(f"Wallet balance raw response: {balance_data}")
 
         coins = balance_data["result"]["list"][0]["coin"]
+
         usdt_info = next((c for c in coins if c["coin"] == "USDT"), None)
 
-        if not usdt_info:
-            logger.error("USDT bilgisi bulunamadı.")
+        if usdt_info is None:
+            logger.error("USDT bulunamadı.")
             return 0.0
 
-        # String gelirse float çevirmeye çalış
-        raw_balance = usdt_info.get("availableToTrade") or "0"
-        balance = float(raw_balance)
+        raw_balance = usdt_info.get("walletBalance", "0")
+        try:
+            balance = float(raw_balance)
+        except ValueError:
+            logger.error(f"walletBalance float dönüşüm hatası: {raw_balance}")
+            return 0.0
 
         logger.info(f"MAIN: USDT bakiyesi: {balance}")
         return balance
 
     except Exception as e:
-        logger.error(f"USDT bakiyesi alınamadı: {e}")
+        logger.error(f"Bakiye verisi alınamadı: {e}")
         return 0.0
 
 
