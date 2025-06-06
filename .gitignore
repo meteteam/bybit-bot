@@ -1,0 +1,7 @@
+# Python cache ve log dosyaları
+pycache/
+*.py[cod]
+*.log
+
+# Ortam değişkenleri (gizli kalmalı)
+.env
