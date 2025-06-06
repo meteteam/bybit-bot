@@ -43,7 +43,6 @@ def get_usdt_balance():
         balance_data = session.get_wallet_balance(accountType="UNIFIED")
         logger.info(f"Wallet balance raw response: {balance_data}")
 
-        # USDT bilgisi coin listesi içinden filtreleniyor
         coins = balance_data["result"]["list"][0]["coin"]
         usdt_info = next((coin for coin in coins if coin["coin"] == "USDT"), None)
 
@@ -51,8 +50,13 @@ def get_usdt_balance():
             logger.error("USDT bilgisi bulunamadı.")
             return 0.0
 
-        # Mevcut bakiye: availableToWithdraw
-        balance = float(usdt_info.get("availableToWithdraw", 0))
+        raw_balance = usdt_info.get("availableToWithdraw", "0")
+        try:
+            balance = float(raw_balance)
+        except ValueError:
+            logger.error(f"availableToWithdraw geçersiz değer: {raw_balance}")
+            return 0.0
+
         logger.info(f"USDT bakiyesi: {balance}")
         return balance
 
