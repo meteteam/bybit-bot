@@ -49,9 +49,9 @@ def get_usdt_balance() -> float:
 # Fiyat çek
 def get_price(symbol: str) -> float:
     try:
-        ticker = session.get_ticker(category="linear", symbol=symbol)
-        logger.info(f"{symbol} fiyat bilgisi: {ticker}")
-        return float(ticker["result"]["list"][0]["lastPrice"])
+        tickers = session.get_tickers(category="linear", symbol=symbol)
+        logger.info(f"{symbol} fiyat bilgisi: {tickers}")
+        return float(tickers["result"]["list"][0]["lastPrice"])
     except Exception as e:
         logger.error(f"{symbol} fiyatı alınamadı: {e}")
         return 0.0
