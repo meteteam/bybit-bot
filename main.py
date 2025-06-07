@@ -79,7 +79,11 @@ async def webhook(signal: WebhookSignal):
     close_sell_signals = ["FULL_LONG_CLOSE", "50_LONG_CLOSE"]
 
     position_qty, position_side = get_position(symbol)
-
+# Yön uyumsuzluğu: LONG varken SHORT sinyalleri, SHORT varken LONG sinyalleri engellenir
+    if any(s in action for s in ["SHORT"]) and position_side == "Buy":
+        return {"error": f"LONG pozisyon varken {action} yapılamaz."}
+    if any(s in action for s in ["LONG"]) and position_side == "Sell":
+        return {"error": f"SHORT pozisyon varken {action} yapılamaz."}
     # Emir yönü belirleme
     if action in buy_signals:
         side = "Buy"
