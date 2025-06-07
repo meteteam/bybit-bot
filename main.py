@@ -20,7 +20,7 @@ if not API_KEY or not API_SECRET:
 # Bybit HTTP oturumu
 session = HTTP(api_key=API_KEY, api_secret=API_SECRET)
 
-# FastAPI uygulaması
+# FastAPI
 app = FastAPI()
 
 # Webhook veri modeli
@@ -28,7 +28,7 @@ class WebhookSignal(BaseModel):
     action: str
     symbol: str
 
-# Fiyat alma
+# Fiyat çekme
 def get_price(symbol: str) -> float:
     try:
         tickers = session.get_tickers(category="linear", symbol=symbol)
@@ -37,7 +37,7 @@ def get_price(symbol: str) -> float:
         logger.error(f"{symbol} fiyatı alınamadı: {e}")
         return 0.0
 
-# USDT bakiyesi alma
+# Bakiye çekme
 def get_usdt_balance() -> float:
     try:
         wallets = session.get_wallet_balance(accountType="UNIFIED")
@@ -49,13 +49,13 @@ def get_usdt_balance() -> float:
         logger.error(f"Bakiye alınamadı: {e}")
         return 0.0
 
-# Pozisyon miktarı ve yönünü alma
+# Pozisyon miktarını ve yönünü çekme
 def get_position(symbol: str):
     try:
         data = session.get_positions(category="linear", symbol=symbol)
         for p in data["result"]["list"]:
             size = float(p["size"])
-            side = p["side"]  # "Buy" veya "Sell"
+            side = p["side"]  # "Buy" or "Sell"
             if size > 0:
                 return size, side
     except Exception as e:
@@ -67,73 +67,57 @@ def get_position(symbol: str):
 async def webhook(signal: WebhookSignal):
     action = signal.action.upper()
     symbol = signal.symbol.upper()
-    logger.info(f"Sinyal: {action}, Sembol: {symbol}")
+    logger.info(f"Webhook Sinyal alındı: {action}, Symbol: {symbol}")
 
     price = get_price(symbol)
     if price <= 0:
         return {"error": "Fiyat alınamadı"}
 
+    # Sinyal grupları
     buy_signals = ["FULL_LONG", "50_RE_LONG"]
     sell_signals = ["FULL_SHORT", "50_RE_SHORT"]
     close_buy_signals = ["FULL_SHORT_CLOSE", "50_SHORT_CLOSE"]
     close_sell_signals = ["FULL_LONG_CLOSE", "50_LONG_CLOSE"]
 
+    # Pozisyon bilgisi al
     position_qty, position_side = get_position(symbol)
-# Yön uyumsuzluğu: LONG varken SHORT sinyalleri, SHORT varken LONG sinyalleri engellenir
-    if any(s in action for s in ["SHORT"]) and position_side == "Buy":
-        return {"error": f"LONG pozisyon varken {action} yapılamaz."}
-    if any(s in action for s in ["LONG"]) and position_side == "Sell":
-        return {"error": f"SHORT pozisyon varken {action} yapılamaz."}
-    # --- EMİR YÖNÜ BELİRLEME ---
 
-    if "CLOSE" in action:
-        if not position_side:
-            return {"error": f"{action} için 
-    açık pozisyon yok."}
-        if ("SHORT" in action and 
-    position_side != "Sell") or \
-           ("LONG" in action and 
-    position_side != "Buy"):
-            return {"error": f"{action} 
-    yönünde açık pozisyon yok."}
-
-    # POZİSYONU KAPATMA: yön tersine çevrilir
-        side = "Sell" if position_side == 
-    "Buy" else "Buy"
-
+    # Emir yönü
+    if action in buy_signals:
+        side = "Buy"
+    elif action in sell_signals:
+        side = "Sell"
+    elif action in close_buy_signals:
+        side = "Sell"
+    elif action in close_sell_signals:
+        side = "Buy"
     else:
-        if action in buy_signals:
-            side = "Buy"
-        elif action in sell_signals:
-            side = "Sell"
-        else:
-            return {"error": f"Bilinmeyen 
-    yön: {action}"}
+        return {"error": f"Bilinmeyen sinyal: {action}"}
 
-    # Pozisyon yönü kontrolü
+    # Pozisyon kontrol mantığı
     if action.startswith("FULL") and (position_side and position_side != side):
-        return {"error": f"Zıt yön pozisyon varken {action} yapılamaz."}
+        return {"error": f"Zıt yönde pozisyon varken {action} yapılamaz."}
 
     if action.startswith("50_RE"):
         if position_side != side:
-            return {"error": f"{action} sadece aynı yön pozisyon varken geçerlidir."}
+            return {"error": f"{action} yalnızca aynı yön pozisyon varken uygulanabilir."}
 
     if "CLOSE" in action:
         if not position_side:
-            return {"error": f"{action} için pozisyon yok."}
-        if position_side != side:
-            return {"error": f"{action} zıt yön pozisyon açıkken çalışmaz."}
+            return {"error": f"Pozisyon yok: {action} uygulanamaz."}
+        if side != position_side:
+            return {"error": f"Zıt yön pozisyon varken {action} uygulanamaz."}
 
-    # Miktar hesaplama
+    # Emir miktarını belirle
     if action in buy_signals + sell_signals:
         if action.startswith("50_RE"):
             used_margin = position_qty * price
             total_balance = get_usdt_balance()
             available = max(0.0, total_balance - used_margin)
             if available < 5:
-                return {"error": "Yetersiz bakiye"}
+                return {"error": "Kalan bakiye yetersiz"}
             qty_raw = available / price
-        else:  # FULL_...
+    else:  # FULL_...
             balance = get_usdt_balance()
             if balance < 5:
                 return {"error": "Yetersiz bakiye"}
@@ -142,11 +126,11 @@ async def webhook(signal: WebhookSignal):
         portion = 0.5 if "50_" in action else 1.0
         qty_raw = position_qty * portion
     else:
-        return {"error": "İşlem belirlenemedi"}
-      # Aşağı yuvarlama (örnek: ETH min 0.01)
+        return {"error": "Geçersiz sinyal"}
+
     qty = math.floor(qty_raw / 0.01) * 0.01
     if qty < 0.01:
-        return {"error": f"Min işlem miktarının altında: {qty}"}
+        return {"error": f"Min. işlem miktarının altında: {qty}"}
 
     reduce_only = "CLOSE" in action
 
@@ -164,4 +148,4 @@ async def webhook(signal: WebhookSignal):
         return {"success": True, "order": order}
     except Exception as e:
         logger.error(f"Emir gönderilemedi: {e}")
-        return {"error": str(e)}
+        return {"error": str(e)}            
