@@ -84,17 +84,25 @@ async def webhook(signal: WebhookSignal):
         return {"error": f"LONG pozisyon varken {action} yapılamaz."}
     if any(s in action for s in ["LONG"]) and position_side == "Sell":
         return {"error": f"SHORT pozisyon varken {action} yapılamaz."}
-    # Emir yönü belirleme
+    # --- EMİR YÖNÜ BELİRLEME ---
+
+if "CLOSE" in action:
+    if not position_side:
+        return {"error": f"{action} için açık pozisyon yok."}
+    if ("SHORT" in action and position_side != "Sell") or \
+       ("LONG" in action and position_side != "Buy"):
+        return {"error": f"{action} yönünde açık pozisyon yok."}
+
+    # POZİSYONU KAPATMA: yön tersine çevrilir
+    side = "Sell" if position_side == "Buy" else "Buy"
+
+else:
     if action in buy_signals:
         side = "Buy"
     elif action in sell_signals:
         side = "Sell"
-    elif action in close_buy_signals:
-        side = "Sell"
-    elif action in close_sell_signals:
-        side = "Buy"
     else:
-        return {"error": f"Bilinmeyen sinyal: {action}"}
+        return {"error": f"Bilinmeyen yön: {action}"}
 
     # Pozisyon yönü kontrolü
     if action.startswith("FULL") and (position_side and position_side != side):
