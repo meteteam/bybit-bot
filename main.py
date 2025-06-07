@@ -102,35 +102,32 @@ async def webhook(signal: WebhookSignal):
         portion = 1.0  # FULL için de 50_RE için de tamamı
         qty_raw = (balance * portion) / price
 
-    elif action in close_buy_signals + 
-    close_sell_signals:
-        position_qty = 
-    get_position_qty(symbol)
-        if position_qty <= 0:
-            return {"error": "Pozisyon yok"}
+elif action in close_buy_signals + close_sell_signals:
+    position_qty = get_position_qty(symbol)
+    if position_qty <= 0:
+        return {"error": "Pozisyon yok"}
 
-         # %50 veya %100 kapatma ayarla
-        portion = 0.5 if "50_" in action 
-    else 1.0
-        qty_raw = position_qty * portion
+    # %50 veya %100 kapatma ayarla
+    portion = 0.5 if "50_" in action else 1.0
+    qty_raw = position_qty * portion
 
-        # Aşağı yuvarla, minimum 0.01
-         qty = math.floor(qty_raw / 0.01) * 0.01
-         if qty < 0.01:
-             return {"error": f"Min. işlem miktarının altında: {qty}"}
+    # Aşağı yuvarla, minimum 0.01
+    qty = math.floor(qty_raw / 0.01) * 0.01
+    if qty < 0.01:
+        return {"error": f"Min. işlem miktarının altında: {qty}"}
 
-         try:
-             order = session.place_order(
-                 category="linear",
-                 symbol=symbol,
-                 side=side,
-                 order_type="Market",
-                 qty=qty,
-                 reduce_only=True,  # ❗ Pozisyon kapatma için şart
-                 time_in_force="GoodTillCancel"
-             )
-             logger.info(f"Pozisyon kapatma emri gönderildi: {order}")
-             return {"success": True, "order": order}
-         except Exception as e:
-             logger.error(f"Pozisyon kapatılamadı: {e}")
-             return {"error": str(e)}
+    try:
+        order = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=side,
+            order_type="Market",
+            qty=qty,
+            reduce_only=True,  # ❗ Pozisyon kapatma için şart
+            time_in_force="GoodTillCancel"
+        )
+        logger.info(f"Pozisyon kapatma emri gönderildi: {order}")
+        return {"success": True, "order": order}
+    except Exception as e:
+        logger.error(f"Pozisyon kapatılamadı: {e}")
+        return {"error": str(e)}
