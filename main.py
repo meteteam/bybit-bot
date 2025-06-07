@@ -102,14 +102,17 @@ async def webhook(signal: WebhookSignal):
         portion = 1.0  # FULL için de 50_RE için de tamamı
         qty_raw = (balance * portion) / price
 
-   elif action in close_buy_signals + close_sell_signals:
-        position_qty = get_position_qty(symbol)
-        if position_qty <= 0:
-            return {"error": "Pozisyon yok"}
+   elif action in close_buy_signals + 
+   close_sell_signals:
+       position_qty = 
+   get_position_qty(symbol)
+       if position_qty <= 0:
+           return {"error": "Pozisyon yok"}
 
         # %50 veya %100 kapatma ayarla
-        portion = 0.5 if "50_" in action else 1.0
-        qty_raw = position_qty * portion
+       portion = 0.5 if "50_" in action 
+   else 1.0
+       qty_raw = position_qty * portion
 
         # Aşağı yuvarla, minimum 0.01
         qty = math.floor(qty_raw / 0.01) * 0.01
