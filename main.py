@@ -113,8 +113,7 @@ async def webhook(signal: WebhookSignal):
         side_check = "Sell" if action in 
     close_sell_signals else "Buy"
         if side != side_check:
-            return {"error": f"{side} 
-    yönünde pozisyon yok"}
+            return {"error": "yönünde pozisyon yok"}
 
     # %50 veya %100 kapat
         portion = 0.5 if "50_" in action 
