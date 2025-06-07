@@ -103,20 +103,18 @@ async def webhook(signal: WebhookSignal):
         qty_raw = (balance * portion) / price
 
     elif action in close_buy_signals + close_sell_signals:
-        position_qty = get_position_qty(symbol)
-        if position_qty <= 0:
-            return {"error": "Pozisyon yok"}
+    position_qty = get_position_qty(symbol)
+    if position_qty <= 0:
+        return {"error": "Pozisyon yok"}
 
-        # Pozisyon yönü kontrolü
-        side_check = "Buy" if action in close_sell_signals else "Sell"
+    # Pozisyon yönü kontrolü
+    side_check = "Sell" if action in close_sell_signals else "Buy"
+    if side != side_check:
+        return {"error": f"{side_check} yönünde pozisyon yok"}
 
-        # Eğer ters yönlü pozisyon varsa kapat
-        if side != side_check:
-            return {"error": f"{side_check} yönünde pozisyon yok"}
-
-        # %50 veya %100 kapat
-        portion = 0.5 if "50_" in action else 1.0
-        qty_raw = position_qty * portion
+    # %50 veya %100 kapat
+    portion = 0.5 if "50_" in action else 1.0
+    qty_raw = position_qty * portion
     else:
         return {"error": "Geçersiz sinyal"}
 
