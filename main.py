@@ -118,14 +118,14 @@ elif action in close_buy_signals + close_sell_signals:
 
     try:
         order = session.place_order(
-            category="linear",
-            symbol=symbol,
-            side=side,
-            order_type="Market",
-            qty=qty,
-            reduce_only=True,  # ❗ Pozisyon kapatma için şart
-            time_in_force="GoodTillCancel"
-        )
+    category="linear",
+    symbol=symbol,
+    side=side,
+    order_type="Market",
+    qty=qty,
+    time_in_force="GoodTillCancel",
+    reduce_only=action in close_buy_signals + close_sell_signals
+)
         logger.info(f"Pozisyon kapatma emri gönderildi: {order}")
         return {"success": True, "order": order}
     except Exception as e:
